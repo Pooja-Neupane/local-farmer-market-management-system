@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sell Your Produce</title>
+  <link rel="stylesheet" href="/public/styles.css" />
+  <script defer src="/public/main.js"></script>
+  <meta name="theme-color" content="#2e7d32"/>
+</head>
+<body>
+  <div class="header">
+    <div class="container">
+      <h1>Sell Your Produce</h1>
+      <div class="nav">
+        <a class="btn secondary" href="/home">Home</a>
+        <button class="btn" onclick="FM.logout()">Logout</button>
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <h2>Add a Product</h2>
+      <div class="row">
+        <div class="grow">
+          <label>Select Existing Product</label>
+          <select id="existingSelect">
+            <option value="">-- Choose a product (optional) --</option>
+          </select>
+        </div>
+        <div>
+          <label>Preview</label>
+          <img id="preview" class="preview" alt="">
+        </div>
+      </div>
+      <form id="sellForm" enctype="multipart/form-data">
+        <div>
+          <label>Name</label>
+          <input name="name" placeholder="e.g., Organic Carrots" required />
+        </div>
+        <div class="row">
+          <div class="grow">
+            <label>Price (USD)</label>
+            <input name="price" type="number" step="0.01" min="0.01" required />
+          </div>
+          <div class="grow">
+            <label>Quantity</label>
+            <input name="quantity" type="number" min="1" required />
+          </div>
+        </div>
+        <div>
+          <label>Image</label>
+          <input name="image" type="file" accept="image/*" />
+        </div>
+        <button class="btn" type="submit">Add Product</button>
+      </form>
+      <div id="msg" class="tag" style="display:none"></div>
+    </div>
+  </div>
+  <div class="footer">Share your harvest with the community</div>
+  <script>
+    window.addEventListener('DOMContentLoaded', async () => {
+      const user = await FM.whoAmI();
+      if(!user){ location.href='/login'; return; }
+      if(user.role !== 'farmer'){ location.href='/home'; return; }
+      try{
+        const data = await FM.api('/api/products');
+        const sel = document.getElementById('existingSelect');
+        data.products.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.name;
+          opt.setAttribute('data-image', p.image_path || '');
+          sel.appendChild(opt);
+        });
+        sel.addEventListener('change', () => {
+          const opt = sel.options[sel.selectedIndex];
+          const name = opt.textContent || '';
+          const img = opt.getAttribute('data-image') || '';
+          if(sel.value){
+            document.querySelector('input[name=\"name\"]').value = name;
+            const prev = document.getElementById('preview');
+            prev.src = img || 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22260%22 height=%22160%22><rect width=%22260%22 height=%22160%22 fill=%22%23b7e4c7%22/></svg>';
+          }
+        });
+      }catch(e){}
+      const form = document.getElementById('sellForm');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(form);
+        try {
+          const res = await fetch('/api/sell', { method: 'POST', body: fd, credentials: 'same-origin' });
+          if(!res.ok){ throw new Error((await res.json()).error || 'Failed'); }
+          document.getElementById('msg').textContent = 'Product added!';
+          document.getElementById('msg').style.display='inline-block';
+          form.reset();
+        } catch (e) {
+          document.getElementById('msg').textContent = e.message || 'Failed';
+          document.getElementById('msg').style.display='inline-block';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
