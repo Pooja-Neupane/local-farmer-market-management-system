@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Buy Fresh Produce</title>
+  <link rel="stylesheet" href="/public/styles.css" />
+  <script defer src="/public/main.js"></script>
+  <meta name="theme-color" content="#2e7d32"/>
+</head>
+<body>
+  <div class="header">
+    <div class="container">
+      <h1>Buy Fresh Produce</h1>
+      <div class="nav">
+        <a class="btn secondary" href="/home">Home</a>
+        <button class="btn" onclick="FM.logout()">Logout</button>
+      </div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="layout">
+      <div>
+        <div id="list" class="grid"></div>
+      </div>
+      <div>
+        <div class="card cart" id="cartCard">
+          <h3>Your Cart</h3>
+          <div id="cartList" class="cart-list"></div>
+          <div class="total"><span>Total</span><span id="cartTotal">$0.00</span></div>
+          <button id="checkoutBtn" class="btn" style="margin-top:12px" disabled>Checkout</button>
+          <div class="tag" id="cartMsg" style="display:none;margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">Choose local, eat seasonal</div>
+  <script>
+    window.addEventListener('DOMContentLoaded', () => {
+      const cart = new Map();
+      function format(n){return '$'+(Number(n).toFixed(2))}
+      function renderCart(){
+        const list = document.getElementById('cartList');
+        const items = Array.from(cart.values());
+        if(items.length===0){
+          list.innerHTML = '<div class="tag">Your cart is empty</div>';
+          document.getElementById('checkoutBtn').disabled = true;
+          document.getElementById('cartTotal').textContent = '$0.00';
+          return;
+        }
+        list.innerHTML = items.map(it => `
+          <div class="cart-item" data-id="${it.id}">
+            <div>${it.name}<div class="price">${format(it.price)}</div></div>
+            <input type="number" min="1" value="${it.quantity}" style="width:80px" />
+            <div>
+              <div class="price">${format(it.price * it.quantity)}</div>
+              <button class="btn secondary" style="margin-top:6px">Remove</button>
+            </div>
+          </div>
+        `).join('');
+        list.querySelectorAll('.cart-item').forEach(row => {
+          const id = Number(row.getAttribute('data-id'));
+          const qtyInput = row.querySelector('input');
+          const removeBtn = row.querySelector('button');
+          qtyInput.addEventListener('change', () => {
+            const q = Math.max(1, Number(qtyInput.value||1));
+            cart.get(id).quantity = q;
+            renderCart();
+          });
+          removeBtn.addEventListener('click', () => {
+            cart.delete(id);
+            renderCart();
+          });
+        });
+        const total = items.reduce((s, it) => s + it.price * it.quantity, 0);
+        document.getElementById('cartTotal').textContent = format(total);
+        document.getElementById('checkoutBtn').disabled = false;
+      }
+      async function load() {
+        const user = await FM.whoAmI();
+        if(!user){ location.href='/login'; return; }
+        if(user.role !== 'customer'){ location.href='/home'; return; }
+        let data;
+        try {
+          data = await FM.api('/api/products');
+        } catch (e) {
+          document.getElementById('list').innerHTML = '<div class="card">Failed to load products.</div>';
+          return;
+        }
+        const { products } = data;
+        const list = document.getElementById('list');
+        if(!products.length){ list.innerHTML = '<div class="card">No products yet. Check back soon!</div>'; return; }
+        list.innerHTML = products.map(p => `
+          <div class="card product">
+            <img src="${p.image_path || 'data:image/svg+xml;utf8,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22300%22 height=%22140%22><rect width=%22300%22 height=%22140%22 fill=%22%23b7e4c7%22/><text x=%2250%25%22 y=%2250%25%22 dominant-baseline=%22middle%22 text-anchor=%22middle%22 fill=%22%231b5e20%22 font-size=%2216%22>Fresh Produce</text></svg>'}" alt="">
+            <div><strong>${p.name}</strong></div>
+            <div>Price: $${p.price}</div>
+            <div>Available: ${p.quantity}</div>
+            <div class="row">
+              <input class="grow" type="number" min="1" max="${p.quantity}" placeholder="Quantity" id="qty-${p.id}">
+              <button class="btn add-btn" data-id="${p.id}" data-name="${p.name.replace(/\"/g,'&quot;')}" data-price="${p.price}" data-image="${p.image_path||''}">Add to Cart</button>
+            </div>
+            <div class="tag" id="msg-${p.id}" style="display:none"></div>
+          </div>
+        `).join('');
+        list.querySelectorAll('.add-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = Number(btn.getAttribute('data-id'));
+            const name = btn.getAttribute('data-name');
+            const price = Number(btn.getAttribute('data-price'));
+            const image = btn.getAttribute('data-image') || null;
+            const qtyInput = document.getElementById('qty-'+id);
+            const qty = Math.max(1, Number(qtyInput.value || 1));
+            const existing = cart.get(id);
+            if(existing){
+              existing.quantity += qty;
+            } else {
+              cart.set(id, { id, name, price, quantity: qty, image_path: image });
+            }
+            const msg = document.getElementById('msg-'+id);
+            msg.textContent = 'Added to cart';
+            msg.style.display='inline-block';
+            renderCart();
+          });
+        });
+      }
+      document.getElementById('checkoutBtn').addEventListener('click', async () => {
+        const items = Array.from(cart.values()).map(it => ({ productId: it.id, quantity: it.quantity }));
+        const cartMsg = document.getElementById('cartMsg');
+        cartMsg.style.display='none';
+        try {
+          const res = await FM.api('/api/checkout', { method:'POST', body: JSON.stringify({ items }) });
+          cartMsg.textContent = `Checkout successful. Total: $${res.total.toFixed(2)}`;
+          cartMsg.style.display='inline-block';
+          cart.clear();
+          renderCart();
+          load();
+        } catch (e) {
+          cartMsg.textContent = e.message || 'Checkout failed';
+          cartMsg.style.display='inline-block';
+        }
+      });
+      load();
+    });
+  </script>
+</body>
+</html>
